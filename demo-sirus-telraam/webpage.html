@@ -1,0 +1,259 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Telraam Azure Maps - Demo Sirus</title>
+
+    <meta charset="utf-8" />
+	<link rel="shortcut icon" href="/favicon.ico"/>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta name="description" content="This sample demonstrates loading large GeoJSON files into the Azure Maps Web SDK." />
+    <meta name="keywords" content="Microsoft maps, map, gis, API, SDK, symbol, pushpin, marker, pin, line, linestring, polygon, parcels" />
+    <meta name="author" content="Microsoft Azure Maps" /><meta name="version" content="1.0" />
+    <meta name="screenshot" content="screenshot.jpg" />
+
+    <!-- Add references to the Atlas Map control JavaScript and CSS files. -->
+    <link href="https://atlas.microsoft.com/sdk/javascript/mapcontrol/3/atlas.min.css" rel="stylesheet" />
+    <script src="https://atlas.microsoft.com/sdk/javascript/mapcontrol/3/atlas.min.js"></script>
+
+    <script>
+        var map, datasource, infopane, completed = 0, featureCnt = 0, totalFileSize = 0;
+        const queryString = window.location.search;
+        const urlParams = new URLSearchParams(queryString);
+        var weggebruiker = urlParams.get('weggebruiker')
+        var url = "http://localhost:9090/ngsi-ld/v1/entities/?q=Voertuigtype==%22https%3A%2F%2Fdata%2Evlaanderen%2Ebe%2Fdoc%2Fconcept%2FVkmVoertuigType%2F" + weggebruiker + "%22&limit=50"
+        //var url = "https://scorpio-broker-telraam-demo.orangebeach-3cba16d1.westeurope.azurecontainerapps.io/ngsi-ld/v1/entities/?q=Voertuigtype==%22https%3A%2F%2Fdata%2Evlaanderen%2Ebe%2Fdoc%2Fconcept%2FVkmVoertuigType%2F" + weggebruiker + "%22&limit=1000"
+        //var geoJsonData = [
+        //    { name: 'Parcel Boundaries', url: '/data/geojson/parcels.json', fileSizeMB: 80, geomType: 'polygons' },
+        //    { name: 'Streets', url: '/data/geojson/streets.json', fileSizeMB: 16, geomType: 'lines' },
+        //    { name: 'Addresses', url: '/data/geojson/address.json', fileSizeMB: 41, geomType: 'points' }
+        //];
+
+        function getMap() {
+            //Initialize a map instance.
+            map = new atlas.Map('myMap', {
+                center: [3.7455, 50.9946],
+                zoom: 12,
+                view: 'Auto',
+
+                //Add authentication details for connecting to Azure Maps.
+                authOptions: {
+                    //Use Microsoft Entra ID authentication.
+                    authType: 'subscriptionKey',
+                    subscriptionKey: '<KEY>', //Your Azure Maps client id for accessing your Azure Maps account.
+                    //getToken: function (resolve, reject, map) {
+                        //URL to your authentication service that retrieves an Microsoft Entra ID Token.
+                    //    var tokenServiceUrl = 'https://samples.azuremaps.com/api/GetAzureMapsToken';
+
+                    //    fetch(tokenServiceUrl).then(r => r.text()).then(token => resolve(token));
+                    //}
+
+                    //Alternatively, use an Azure Maps key. Get an Azure Maps key at https://azure.com/maps. NOTE: The primary key should be used as the key.
+                    //authType: 'subscriptionKey',
+                    //subscriptionKey: '[YOUR_AZURE_MAPS_KEY]'
+                }
+            });
+
+            //infopane = document.getElementById('infopane');
+            var select = document.getElementById('weggebruikerselection');
+            var option_nr = 0
+            selectoptions = select.options;
+            switch(weggebruiker) {
+                case 'auto':
+                    option_nr = 0;
+                    break;
+                case 'voetganger':
+                    option_nr = 1;
+                    break;
+                case 'fiets':
+                    option_nr = 2;
+                    break;
+                case 'vrachtwagen':
+                    option_nr = 3
+                    break;
+            }
+            selectoptions[option_nr].setAttribute('selected', true)
+
+            //Wait until the map resources are ready.
+            map.events.add('ready', function () {
+                //Create a data source to store the data in.
+                datasource = new atlas.source.DataSource();
+                map.sources.add(datasource);
+
+                //Add a layer for rendering the polygons.
+                var polygonLayer = new atlas.layer.PolygonLayer(datasource, null, {
+                    fillColor: '#1e90ff',
+                    filter: ['any', ['==', ['geometry-type'], 'Polygon'], ['==', ['geometry-type'], 'MultiPolygon']]	//Only render Polygon or MultiPolygon in this layer.
+                });
+
+                //Add a click event to the layer.
+                map.events.add('click', polygonLayer, featureClicked);
+
+                //Add a layer for rendering line data.
+                var lineLayer = new atlas.layer.LineLayer(datasource, null, {
+                    strokeColor: '#1e90ff',
+                    strokeWidth: 4,
+                    filter: ['any', ['==', ['geometry-type'], 'LineString'], ['==', ['geometry-type'], 'MultiLineString']]	//Only render LineString or MultiLineString in this layer.
+                });
+
+                //Add a click event to the layer.
+                map.events.add('click', lineLayer, featureClicked);
+
+                //Add a layer for rendering point data.
+                var pointLayer = new atlas.layer.SymbolLayer(datasource, null, {
+                    iconOptions: {
+                        allowOverlap: true,
+                        ignorePlacement: true
+                    },
+                    filter: ['any', ['==', ['geometry-type'], 'Point'], ['==', ['geometry-type'], 'MultiPoint']] //Only render Point or MultiPoints in this layer.
+                });
+
+                //Add a click event to the layer.
+                map.events.add('click', pointLayer, featureClicked);
+
+                //Add polygon and line layers to the map, below the labels..
+                map.layers.add([
+                    polygonLayer,
+
+                    //Add a layer for rendering the outline of polygons.
+                    new atlas.layer.LineLayer(datasource, null, {
+                        strokeColor: 'black',
+                        filter: ['any', ['==', ['geometry-type'], 'Polygon'], ['==', ['geometry-type'], 'MultiPolygon']]	//Only render Polygon or MultiPolygon in this layer.
+                    }),
+
+                    lineLayer, pointLayer
+                ], 'labels');
+
+
+                //Add the point layer above the labels. 
+                map.layers.add(pointLayer);
+
+                //Create a popup but leave it closed so we can update it and display it later.
+                popup = new atlas.Popup({
+                    position: [0, 0]
+                });
+
+                //Load the GeoJSON feeds.
+                loadGeoJsonFile(url);
+            });
+        }
+
+        function loadGeoJsonFile(url) {
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", url);
+            xhr.setRequestHeader("Accept", "application/geo+json")
+            xhr.setRequestHeader("format", "concise")
+            xhr.setRequestHeader("Link", "<https://pastebin.com/raw/PrieYzNv> ; rel=\"http://www.w3.org/ns/json-ld#context\"; type=\"application/ld+json\"")
+            xhr.responseType = "json";
+
+            xhr.send();
+            xhr.onload = () => {
+            if (xhr.readyState == 4 && xhr.status == 200) {
+                console.log(xhr.response);
+            } else {
+                console.log(`Error: ${xhr.status}`);
+            }
+            datasource.add(xhr.response)
+
+
+        };
+
+        //var geojsonData = JSON.stringify(xhr.response);
+        //console.log(geojsonData);
+        //print()
+        //a = atlas.io.read(xhr.response)
+        //console.log(a)
+        //datasource.add(a);
+            
+        };
+
+        function featureClicked(e) {
+            //Make sure the event occurred on a shape feature.
+            if (e.shapes && e.shapes.length > 0) {
+                //By default, show the popup where the mouse event occurred.
+                var pos = e.position;
+                var offset = [0, 0];
+                var properties;
+
+                if (e.shapes[0] instanceof atlas.Shape) {
+                    properties = e.shapes[0].getProperties();
+                    //properties = e.shapes[0].getId();
+
+                    //If the shape is a point feature, show the popup at the points coordinate.
+                    if (e.shapes[0].getType() === 'Point') {
+                        pos = e.shapes[0].getCoordinates();
+                        offset = [0, -18];
+                    }
+                } else {
+                    properties = e.shapes[0].properties;
+
+                    //If the shape is a point feature, show the popup at the points coordinate.
+                    if (e.shapes[0].type === 'Point') {
+                        pos = e.shapes[0].geometry.coordinates;
+                        offset = [0, -18];
+                    }
+                }
+
+                //Update the content and position of the popup.
+                popup.setOptions({
+                    //Create a table from the properties in the feature.
+                    content: atlas.PopupTemplate.applyTemplate(properties),
+                    position: pos,
+                    pixelOffset: offset
+                });
+
+                //Open the popup.
+                popup.open(map);
+            }
+        }
+    </script>
+    <style>
+        #myMap {
+            position: relative;
+            width: calc(100% - 210px);
+            min-width:290px;
+            height: 600px;
+            float: left;
+        }
+
+        /*#infopane {
+            margin-left: 10px;
+            width: 200px;
+            height: 600px;
+            overflow-y: auto;
+            float: left;
+        }*/
+
+        table {
+            border-collapse: collapse;
+        }
+
+        table, th, td {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body onload="getMap()">
+    <div id="myMap" style="position:relative;width:100%;min-width:290px;height:600px;"></div>
+
+    <!--<div id="infopane"></div>-->
+
+    <div style="clear:both;"></div>
+
+    <fieldset style="width:calc(100% - 30px);min-width:290px;margin-top:10px;">
+        <legend>Telraam Demo Sirus</legend>
+        <form action="">
+            <label for="weggebruiker">Kies een type weggebruiker:</label>
+            <select name="weggebruiker" id="weggebruikerselection">
+                <option value="auto">auto</option>
+                <option value="voetganger">voetganger</option>
+                <option value="fiets">fiets</option>
+                <option value="vrachtwagen">vrachtwagen</option>
+            </select>
+            <br><br>
+            <input type="submit" value="Submit">
+          </form>
+
+    </fieldset>
+</body>
+</html>

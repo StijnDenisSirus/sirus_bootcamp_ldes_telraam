@@ -1,0 +1,400 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Telraam Azure Maps - Demo Sirus</title>
+
+    <meta charset="utf-8" />
+	<link rel="shortcut icon" href="/favicon.ico"/>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta name="description" content="This sample demonstrates loading large GeoJSON files into the Azure Maps Web SDK." />
+    <meta name="keywords" content="Microsoft maps, map, gis, API, SDK, symbol, pushpin, marker, pin, line, linestring, polygon, parcels" />
+    <meta name="author" content="Microsoft Azure Maps" /><meta name="version" content="1.0" />
+    <meta name="screenshot" content="screenshot.jpg" />
+
+    <!-- Add references to the Atlas Map control JavaScript and CSS files. -->
+    <link href="https://atlas.microsoft.com/sdk/javascript/mapcontrol/3/atlas.min.css" rel="stylesheet" />
+    <script src="https://atlas.microsoft.com/sdk/javascript/mapcontrol/3/atlas.min.js"></script>
+
+    <!-- Load in the JavaScript and CSS files that has our custom control. -->
+    <link rel="stylesheet" href="lib/azure-maps-layer-legend.min.css" type="text/css" />
+    <script src="lib/azure-maps-layer-legend.min.js"></script>
+
+    <script>
+        var map, datasource, infopane, legend, completed = 0, featureCnt = 0, totalFileSize = 0;
+
+        const queryString = window.location.search;
+        const urlParams = new URLSearchParams(queryString);
+        //var weggebruiker = urlParams.get('weggebruiker')
+        var weggebruiker = "auto"
+        var url_auto = "http://localhost:9090/ngsi-ld/v1/entities/?q=Voertuigtype==%22https%3A%2F%2Fdata%2Evlaanderen%2Ebe%2Fdoc%2Fconcept%2FVkmVoertuigType%2F" + weggebruiker + "%22&limit=50"
+        var weggebruiker = "fiets"
+        var url_fiets = "http://localhost:9090/ngsi-ld/v1/entities/?q=Voertuigtype==%22https%3A%2F%2Fdata%2Evlaanderen%2Ebe%2Fdoc%2Fconcept%2FVkmVoertuigType%2F" + weggebruiker + "%22&limit=50"
+        var weggebruiker = "voetganger"
+        var url_voetganger = "http://localhost:9090/ngsi-ld/v1/entities/?q=Voertuigtype==%22https%3A%2F%2Fdata%2Evlaanderen%2Ebe%2Fdoc%2Fconcept%2FVkmVoertuigType%2F" + weggebruiker + "%22&limit=50"
+        var weggebruiker = "vrachtwagen"
+        var url_vrachtwagen = "http://localhost:9090/ngsi-ld/v1/entities/?q=Voertuigtype==%22https%3A%2F%2Fdata%2Evlaanderen%2Ebe%2Fdoc%2Fconcept%2FVkmVoertuigType%2F" + weggebruiker + "%22&limit=50"
+
+        //var url = "https://scorpio-broker-telraam-demo.orangebeach-3cba16d1.westeurope.azurecontainerapps.io/ngsi-ld/v1/entities/?q=Voertuigtype==%22https%3A%2F%2Fdata%2Evlaanderen%2Ebe%2Fdoc%2Fconcept%2FVkmVoertuigType%2F" + weggebruiker + "%22&limit=1000"
+
+        function getMap() {
+            //Initialize a map instance.
+            map = new atlas.Map('myMap', {
+                center: [3.7455, 50.9946],
+                zoom: 12,
+                view: 'Auto',
+                style: 'satellite_road_labels',
+                language: 'nl-be',
+
+                //Add authentication details for connecting to Azure Maps.
+                authOptions: {
+                    //Use Microsoft Entra ID authentication.
+                    authType: 'subscriptionKey',
+                    subscriptionKey: '<KEY>', //Your Azure Maps client id for accessing your Azure Maps account.
+                }
+            });
+
+            //infopane = document.getElementById('infopane');
+            //var select = document.getElementById('weggebruikerselection');
+            //var option_nr = 0
+            //selectoptions = select.options;
+            /*switch(weggebruiker) {
+                case 'auto':
+                    option_nr = 0;
+                    break;
+                case 'voetganger':
+                    option_nr = 1;
+                    break;
+                case 'fiets':
+                    option_nr = 2;
+                    break;
+                case 'vrachtwagen':
+                    option_nr = 3
+                    break;
+            }
+            selectoptions[option_nr].setAttribute('selected', true)*/
+
+            //Wait until the map resources are ready.
+            map.events.add('ready', function () {
+                    // Add the zoom control to the map.
+                map.controls.add(new atlas.control.ZoomControl(), {
+                position: 'top-right'
+                });
+
+                // Add the style control to the map.
+                map.controls.add(new atlas.control.StyleControl({ mapStyles: ['road', 'satellite', 'satellite_road_labels', 'grayscale_light'] }), {
+                    position: 'top-right'
+                });
+
+                // Add pitch control and add it to the map.
+                map.controls.add(new atlas.control.PitchControl({ pitchDegreesDelta: 5 }), {
+                    position: 'top-right'
+                });
+
+                // Add compass control and add it to the map.
+                map.controls.add(new atlas.control.CompassControl({ rotationDegreesDelta: 5 }), {
+                    position: 'top-right'
+                });
+
+                //Create a data source to store the data in.
+                datasource_auto = new atlas.source.DataSource();
+                map.sources.add(datasource_auto);
+                datasource_fiets = new atlas.source.DataSource();
+                map.sources.add(datasource_fiets);
+                datasource_voetganger = new atlas.source.DataSource();
+                map.sources.add(datasource_voetganger);
+                datasource_vrachtwagen = new atlas.source.DataSource();
+                map.sources.add(datasource_vrachtwagen);
+
+                //Add a layer for rendering point data.
+                var autoLayer = new atlas.layer.SymbolLayer(datasource_auto, null, {
+                    iconOptions: {
+                        allowOverlap: true,
+                        ignorePlacement: true,
+                        image: 'marker-blue',
+                        offset: [12, 12]
+                    },
+                    filter: ['any', ['==', ['geometry-type'], 'Point'], ['==', ['geometry-type'], 'MultiPoint']] //Only render Point or MultiPoints in this layer.
+                });
+
+                //Add a layer for rendering point data.
+                var fietsLayer = new atlas.layer.SymbolLayer(datasource_fiets, null, {
+                    iconOptions: {
+                        allowOverlap: true,
+                        ignorePlacement: true,
+                        image: 'marker-black',
+                        offset: [-12, 12]
+                    },
+                    filter: ['any', ['==', ['geometry-type'], 'Point'], ['==', ['geometry-type'], 'MultiPoint']] //Only render Point or MultiPoints in this layer.
+                });
+
+                //Add a layer for rendering point data.
+                var voetgangersLayer = new atlas.layer.SymbolLayer(datasource_voetganger, null, {
+                    iconOptions: {
+                        allowOverlap: true,
+                        ignorePlacement: true,
+                        image: 'marker-red',
+                        offset: [-12, -12]
+                    },
+                    filter: ['any', ['==', ['geometry-type'], 'Point'], ['==', ['geometry-type'], 'MultiPoint']] //Only render Point or MultiPoints in this layer.
+                });
+
+                //Add a layer for rendering point data.
+                var vrachtwagenLayer = new atlas.layer.SymbolLayer(datasource_vrachtwagen, null, {
+                    iconOptions: {
+                        allowOverlap: true,
+                        ignorePlacement: true,
+                        image: 'marker-yellow',
+                        offset: [12, -12]
+                    },
+                    filter: ['any', ['==', ['geometry-type'], 'Point'], ['==', ['geometry-type'], 'MultiPoint']] //Only render Point or MultiPoints in this layer.
+                });
+
+                //Add a click event to the layer.
+                map.events.add('click', autoLayer, featureClicked);
+                map.events.add('click', fietsLayer, featureClicked);
+                map.events.add('click', voetgangersLayer, featureClicked);
+                map.events.add('click', vrachtwagenLayer, featureClicked);
+
+                //Add the point layer above the labels. 
+                map.layers.add(autoLayer);
+                map.layers.add(fietsLayer);
+                map.layers.add(voetgangersLayer);
+                map.layers.add(vrachtwagenLayer);
+
+                 //Create a legend control that the layer control will leverage.
+                 legend = new atlas.control.LegendControl({
+                    title: 'Legend'
+                });
+
+                //Add the legend control to the map.
+                //map.controls.add(legend, {
+                //    position: 'bottom-left'
+                //});
+
+                //Create the layer control.
+                layerControl = new atlas.control.LayerControl({
+                    layout: 'accordion',
+                    title: 'Layer options',
+
+                    //Attach the legend control.
+                    //legendControl: legend,
+               
+                    layerGroups: [
+                    {
+                            layout: 'checkbox',
+
+                            //A title for this layer group.
+                            groupTitle: 'Verkeersmetingen Telraam',
+
+                            //The layers affected by this group. 
+                            //layers: ['earthquake-circles', 'earthquake-labels'],
+
+                            items: [
+                                {
+                                    layout: 'checkbox',
+                                    layers: [autoLayer],
+                                    label: 'auto',
+                                    //Optionally specify if the state is enabled or not initially.
+                                    enabled: false,
+                                    //Style to apply when a checkbox is checked.
+                                    enabledStyle: {
+                                        visible: true
+                                    },
+                                    //Style to apply when a checkbox is unchecked.
+                                    disabledStyle: {
+                                        visible: false
+                                    }
+                                },
+                                {
+                                    layout: 'checkbox',
+                                    layers: [fietsLayer],
+                                    label: 'fiets',
+                                    //Optionally specify if the state is enabled or not initially.
+                                    enabled: false,
+                                    //Style to apply when a checkbox is checked.
+                                    enabledStyle: {
+                                        visible: true
+                                    },
+                                    //Style to apply when a checkbox is unchecked.
+                                    disabledStyle: {
+                                        visible: false
+                                    }
+                                },
+                                {
+                                    layout: 'checkbox',
+                                    layers: [voetgangersLayer],
+                                    label: 'voetganger',
+                                    //Optionally specify if the state is enabled or not initially.
+                                    enabled: false,
+                                    //Style to apply when a checkbox is checked.
+                                    enabledStyle: {
+                                        visible: true
+                                    },
+                                    //Style to apply when a checkbox is unchecked.
+                                    disabledStyle: {
+                                        visible: false
+                                    }
+                                },
+                                {
+                                    layout: 'checkbox',
+                                    layers: [vrachtwagenLayer],
+                                    label: 'vrachtwagen',
+                                    //Optionally specify if the state is enabled or not initially.
+                                    enabled: false,
+                                    //Style to apply when a checkbox is checked.
+                                    enabledStyle: {
+                                        visible: true
+                                    },
+                                    //Style to apply when a checkbox is unchecked.
+                                    disabledStyle: {
+                                        visible: false
+                                    }
+                                }
+                            ]
+                        }
+                    ]               
+                
+                
+                });
+
+               //Add the layer control to the map. 
+               map.controls.add(layerControl, {
+                    position: 'bottom-left'
+                });
+
+                //Optionally add events to the layer control to know when any states change.
+                map.events.add('statechanged', layerControl, function (e) {
+                    console.log('statechanged');
+                });
+
+                map.events.add('toggled', legend, function (e) {
+                    console.log('Minified ' + e.minimized);
+                });
+
+                //Create a popup but leave it closed so we can update it and display it later.
+                popup = new atlas.Popup({
+                    position: [0, 0]
+                });
+
+                //Load the GeoJSON feeds.
+                loadGeoJsonFile(url_auto, datasource_auto);
+                loadGeoJsonFile(url_fiets, datasource_fiets);
+                loadGeoJsonFile(url_voetganger, datasource_voetganger);
+                loadGeoJsonFile(url_vrachtwagen, datasource_vrachtwagen);
+
+
+            });
+        }
+
+
+
+        function loadGeoJsonFile(url, selected_source) {
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", url);
+            xhr.setRequestHeader("Accept", "application/geo+json")
+            xhr.setRequestHeader("format", "concise")
+            xhr.setRequestHeader("Link", "<https://pastebin.com/raw/PrieYzNv> ; rel=\"http://www.w3.org/ns/json-ld#context\"; type=\"application/ld+json\"")
+            xhr.responseType = "json";
+
+            xhr.send();
+            xhr.onload = () => {
+            if (xhr.readyState == 4 && xhr.status == 200) {
+                console.log(xhr.response);
+            } else {
+                console.log(`Error: ${xhr.status}`);
+            }
+            selected_source.add(xhr.response)
+        };
+
+
+
+        //var geojsonData = JSON.stringify(xhr.response);
+        //console.log(geojsonData);
+        //print()
+        //a = atlas.io.read(xhr.response)
+        //console.log(a)
+        //datasource.add(a);
+            
+        };
+
+        function featureClicked(e) {
+            //Make sure the event occurred on a shape feature.
+            if (e.shapes && e.shapes.length > 0) {
+                //By default, show the popup where the mouse event occurred.
+                var pos = e.position;
+                var offset = [0, 0];
+                var properties;
+
+                if (e.shapes[0] instanceof atlas.Shape) {
+                    properties = e.shapes[0].getProperties();
+                    //properties = e.shapes[0].getId();
+
+                    //If the shape is a point feature, show the popup at the points coordinate.
+                    if (e.shapes[0].getType() === 'Point') {
+                        pos = e.shapes[0].getCoordinates();
+                        offset = [0, -18];
+                    }
+                } else {
+                    properties = e.shapes[0].properties;
+
+                    //If the shape is a point feature, show the popup at the points coordinate.
+                    if (e.shapes[0].type === 'Point') {
+                        pos = e.shapes[0].geometry.coordinates;
+                        offset = [0, -18];
+                    }
+                }
+
+                //Update the content and position of the popup.
+                popup.setOptions({
+                    //Create a table from the properties in the feature.
+                    content: atlas.PopupTemplate.applyTemplate(properties),
+                    position: pos,
+                    pixelOffset: offset
+                });
+
+                //Open the popup.
+                popup.open(map);
+            }
+        }
+    </script>
+    <style>
+        #myMap {
+            position: relative;
+            width: calc(100% - 210px);
+            min-width:290px;
+            height: 600px;
+            float: left;
+        }
+
+        /*#infopane {
+            margin-left: 10px;
+            width: 200px;
+            height: 600px;
+            overflow-y: auto;
+            float: left;
+        }*/
+
+        table {
+            border-collapse: collapse;
+        }
+
+        table, th, td {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body onload="getMap()">
+    <div id="myMap" style="position:relative;width:100%;min-width:290px;height:600px;"></div>
+
+    <!--<div id="infopane"></div>-->
+
+    <div style="clear:both;"></div>
+
+    <fieldset style="width:calc(100% - 30px);min-width:290px;margin-top:10px;">
+        <legend>Telraam Demo Sirus</legend>
+
+
+    </fieldset>
+</body>
+</html>

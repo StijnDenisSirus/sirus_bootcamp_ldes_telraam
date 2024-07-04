@@ -27,6 +27,7 @@ services:
     image: scorpiobroker/all-in-one-runner:java-latest
     environment:
       DBHOST: postgres
+      GATEWAY_ENABLECORS_ALLOWALL: true
     ports:
       - "9090:9090"
     depends_on:
